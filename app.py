@@ -266,15 +266,36 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     print("🔮 Запуск WEBI-future Магической Лаборатории...")
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Создаем приложение с обработкой ошибок
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
+        .build()
+    )
 
+    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
 
     print("✅ WEBI-future Магическая Лаборатория активирована!")
-    application.run_polling()
+
+    # Запускаем бота
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
+
+
+async def on_startup(app: Application):
+    print("🔄 Бот запускается...")
+
+
+async def on_shutdown(app: Application):
+    print("🔄 Бот останавливается...")
 
 
 if __name__ == '__main__':
