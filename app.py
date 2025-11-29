@@ -1,6 +1,8 @@
 import os
 import logging
 import asyncio
+import threading
+from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -29,6 +31,24 @@ MAGIC_KEYBOARD = ReplyKeyboardMarkup([
 
 # Хранилище для временных данных пользователей
 user_data = {}
+
+# Создаем Flask app для здоровья сервиса
+web_app = Flask(__name__)
+
+
+@web_app.route('/')
+def home():
+    return '🔮 WEBI-future Магическая Лаборатория работает!'
+
+
+@web_app.route('/healthz')
+def health_check():
+    return 'OK', 200
+
+
+def run_web_server():
+    """Запускает веб-сервер в отдельном потоке"""
+    web_app.run(host='0.0.0.0', port=5000, debug=False)
 
 
 class UserState:
@@ -278,6 +298,11 @@ async def on_shutdown(app: Application):
 def main():
     """Основная функция запуска бота"""
     print("🔮 Инициализация WEBI-future Магической Лаборатории...")
+
+    # Запускаем веб-сервер в отдельном потоке для Render
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    print("🌐 HTTP-сервер запущен на порту 5000")
 
     # Создаем приложение
     application = (
