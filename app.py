@@ -124,46 +124,29 @@ async def generate_ai_video(photo_path: str, prompt: str) -> str:
             logger.warning("API ключи Kling AI не настроены")
             return None
 
-        # Подготовка данных для API
-        # ВАЖНО: URL нужно проверить в документации Kling AI
-        url = "https://api.klingai.com/v1/videos/generate"
+        logger.info("🎯 Проверяем доступность Kling AI API...")
+
+        # ПРОБНЫЙ ЗАПРОС - проверяем аутентификацию
+        test_url = "https://api.klingai.com/v1/models"  # или другой endpoint для проверки
 
         headers = {
             "X-API-Key": api_key,
             "X-Secret-Key": secret_key,
-            "Content-Type": "application/json"
         }
 
-        # Читаем фото как base64
-        with open(photo_path, "rb") as image_file:
-            image_data = base64.b64encode(image_file.read()).decode('utf-8')
-
-        payload = {
-            "prompt": prompt,
-            "image": image_data,
-            "duration": 3,  # 3 секунды для начала
-            "style": "cinematic",
-            "quality": "standard"
-        }
-
-        # Отправляем запрос на генерацию
-        logger.info("🎯 Отправляем запрос в Kling AI API...")
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
-
-        if response.status_code == 200:
-            result = response.json()
-            task_id = result.get("task_id")
-
-            if task_id:
-                # Ожидаем завершения генерации
-                video_url = await wait_for_video_generation(task_id, headers)
-                return video_url
-            else:
-                logger.error("Не получили task_id от Kling AI")
+        try:
+            test_response = requests.get(test_url, headers=headers, timeout=10)
+            logger.info(f"🎯 Тестовый запрос: статус {test_response.status_code}")
+            if test_response.status_code != 200:
+                logger.error(f"🎯 Ошибка аутентификации: {test_response.text}")
                 return None
-        else:
-            logger.error(f"Ошибка API Kling AI: {response.status_code} - {response.text}")
+        except Exception as e:
+            logger.error(f"🎯 Ошибка подключения к Kling AI: {e}")
             return None
+
+        # Если дошли сюда - API доступно, но нужен правильный URL для генерации
+        logger.info("🎯 Kling AI доступен, но нужен правильный endpoint для генерации видео")
+        return None
 
     except Exception as e:
         logger.error(f"Ошибка генерации AI-видео: {e}")
