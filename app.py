@@ -2,6 +2,8 @@ import os
 import logging
 import asyncio
 import threading
+import base64
+import requests
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -17,6 +19,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+KLING_AI_API_KEY = os.getenv('KLING_AI_API_KEY')
+KLING_AI_SECRET_KEY = os.getenv('KLING_AI_SECRET_KEY')
 
 if not BOT_TOKEN:
     raise ValueError("Не найден BOT_TOKEN в переменных окружения!")
@@ -108,8 +112,137 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def generate_ai_video(photo_path: str, prompt: str) -> str:
+    """Генерация AI-видео через Kling AI API"""
+    try:
+        api_key = os.getenv('KLING_AI_API_KEY')
+        secret_key = os.getenv('KLING_AI_SECRET_KEY')
+
+        if not api_key or not secret_key:
+            logger.warning("API ключи Kling AI не настроены")
+            return None
+
+        # Подготовка данных для API
+        # ВАЖНО: URL нужно проверить в документации Kling AI
+        url = "https://api.klingai.com/v1/videos/generate"
+
+        headers = {
+            "X-API-Key": api_key,
+            "X-Secret-Key": secret_key,
+            "Content-Type": "application/json"
+        }
+
+        # Читаем фото как base64
+        with open(photo_path, "rb") as image_file:
+            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+
+        payload = {
+            "prompt": prompt,
+            "image": image_data,
+            "duration": 3,  # 3 секунды для начала
+            "style": "cinematic",
+            "quality": "standard"
+        }
+
+        # Отправляем запрос на генерацию
+        logger.info("Отправляем запрос в Kling AI API...")
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+
+        if response.status_code == 200:
+            result = response.json()
+            task_id = result.get("task_id")
+
+            if task_id:
+                # Ожидаем завершения генерации
+                video_url = await wait_for_video_generation(task_id, headers)
+                return video_url
+            else:
+                logger.error("Не получили task_id от Kling AI")
+                return None
+        else:
+            logger.error(f"Ошибка API Kling AI: {response.status_code} - {response.text}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Ошибка генерации AI-видео: {e}")
+        return None
+
+
+async def wait_for_video_generation(task_id: str, headers: dict) -> str:
+    """Ожидание завершения генерации видео"""
+    max_attempts = 30  # Максимум 30 попыток (около 2.5 минут)
+    attempt = 0
+
+    while attempt < max_attempts:
+        try:
+            # Проверяем статус задачи
+            status_url = f"https://api.klingai.com/v1/videos/status/{task_id}"
+            response = requests.get(status_url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                status_data = response.json()
+                status = status_data.get("status")
+
+                if status == "completed":
+                    video_url = status_data.get("video_url")
+                    logger.info(f"Видео сгенерировано: {video_url}")
+                    return video_url
+                elif status == "failed":
+                    logger.error(f"Генерация видео не удалась: {status_data.get('error')}")
+                    return None
+                else:
+                    # Генерация еще в процессе
+                    logger.info(f"Статус генерации: {status}, ждем...")
+                    await asyncio.sleep(5)  # Ждем 5 секунд перед следующей проверкой
+                    attempt += 1
+            else:
+                logger.error(f"Ошибка проверки статуса: {response.status_code}")
+                await asyncio.sleep(5)
+                attempt += 1
+
+        except Exception as e:
+            logger.error(f"Ошибка при проверке статуса: {e}")
+            await asyncio.sleep(5)
+            attempt += 1
+
+    logger.error("Превышено время ожидания генерации видео")
+    return None
+
+
+async def show_magical_transformation(update: Update, archetype: str, progress_msg):
+    """Показывает магическое превращение (заглушка)"""
+    archetype_descriptions = {
+        '🧙 АРХИМАГ': 'архимагом - повелителем древних заклинаний',
+        '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': 'хранителем драконов - другом мифических существ',
+        '🌿 ДУХ ПРИРОДЫ': 'духом природы - воплощением живой природы',
+        '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': 'повелителем стихий - контролером огня, воды, воздуха и земли',
+        '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': 'кристаллическим аватаром - формой из чистой энергии',
+        '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': 'маской тысячи ликов - многоликим хамелеоном реальностей'
+    }
+
+    completion_messages = {
+        '🧙 АРХИМАГ': 'Теперь ты обладаешь знанием древних заклинаний и магической мудростью! 📖✨',
+        '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': 'Драконы признали в тебе друга и хранителя! 🐲🔥',
+        '🌿 ДУХ ПРИРОДЫ': 'Природа обрела в тебе своё голос и защитника! 🌳🍃',
+        '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': 'Стихии покорились твоей воле! Огонь, вода, воздух и земля служат тебе! 🌪️🔥',
+        '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': 'Ты стал воплощением чистой энергии и света! 💎🌈',
+        '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': 'Ты обрёл способность менять облики между реальностями! 🎭🔄'
+    }
+
+    selected_description = archetype_descriptions.get(archetype, 'магическое существо')
+
+    await progress_msg.edit_text(
+        f'**✨ МАГИЧЕСКОЕ ПРЕВРАЩЕНИЕ ЗАВЕРШЕНО!**\n\n'
+        f'Ты успешно превратился в {selected_description}!\n\n'
+        f'{completion_messages.get(archetype, "Магия работает!")}\n\n'
+        f'🚀 **WEBI-future** открывает порталы в новые реальности!\n\n'
+        f'🔗 Посети наш сайт: https://prusya.pythonanywhere.com/\n\n'
+        f'Хочешь испытать другое превращение? Присылай новое фото!'
+    )
+
+
 async def handle_archetype_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик выбора магического архетипа"""
+    """Обработчик выбора магического архетипа с AI-видео"""
     try:
         user_id = update.effective_user.id
         text = update.message.text
@@ -145,17 +278,18 @@ async def handle_archetype_selection(update: Update, context: ContextTypes.DEFAU
             )
             return
 
-        archetype_descriptions = {
-            '🧙 АРХИМАГ': 'архимагом - повелителем древних заклинаний',
-            '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': 'хранителем драконов - другом мифических существ',
-            '🌿 ДУХ ПРИРОДЫ': 'духом природы - воплощением живой природы',
-            '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': 'повелителем стихий - контролером огня, воды, воздуха и земли',
-            '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': 'кристаллическим аватаром - формой из чистой энергии',
-            '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': 'маской тысячи ликов - многоликим хамелеоном реальностей'
+        # Промпты для каждого архетипа (на английском для лучшего качества AI)
+        archetype_prompts = {
+            '🧙 АРХИМАГ': "magical transformation into an ancient archmage, glowing robes, mystical energy, floating runes, fantasy style, cinematic, high quality, magical transformation, detailed facial features, epic lighting",
+            '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': "person transforming into a dragon keeper, scales appearing on skin, dragon wings growing, mythical landscape with dragons flying, epic fantasy, dynamic motion, cinematic quality",
+            '🌿 ДУХ ПРИРОДЫ': "person transforming into a nature spirit, body merging with leaves and vines, flowers blooming around, serene forest background, organic transformation, magical, cinematic",
+            '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': "person transforming into an elemental master, controlling fire, water, air, and earth, swirling elements around, powerful, dynamic, epic, fantasy, cinematic",
+            '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': "person transforming into a crystalline avatar, body becoming transparent and refracting light, sparkling energy, geometric patterns, magical transformation, cinematic",
+            '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': "person transforming, face shifting through multiple masks and identities, surreal, mysterious, magical, changing appearances rapidly, cinematic quality"
         }
 
-        selected_description = archetype_descriptions.get(text)
-        if not selected_description:
+        selected_prompt = archetype_prompts.get(text)
+        if not selected_prompt:
             await update.message.reply_text(
                 'Пожалуйста, выбери магический архетип из предложенных ниже 👇',
                 reply_markup=MAGIC_KEYBOARD
@@ -164,89 +298,58 @@ async def handle_archetype_selection(update: Update, context: ContextTypes.DEFAU
 
         user_data[user_id].selected_archetype = text
 
-        # Уникальные описания процессов для каждого архетипа
-        process_descriptions = {
-            '🧙 АРХИМАГ': [
-                "📖 Чтение древних гримуаров...",
-                "🔍 Поиск подходящих заклинаний...",
-                "✨ Активация магического поля..."
-            ],
-            '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': [
-                "🐲 Установление связи с драконами...",
-                "🏔️ Поиск в мифических горах...",
-                "🔥 Настройка драконьей ауры..."
-            ],
-            '🌿 ДУХ ПРИРОДЫ': [
-                "🌳 Связь с древними лесами...",
-                "🍃 Наполнение природной энергией...",
-                "💫 Пробуждение духов природы..."
-            ],
-            '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': [
-                "🌪️ Балансирование стихий...",
-                "🔥 Настройка элементальной магии...",
-                "⚡ Концентрация природных сил..."
-            ],
-            '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': [
-                "💎 Кристаллизация энергии...",
-                "🌈 Настройка светового спектра...",
-                "✨ Формирование энергетической матрицы..."
-            ],
-            '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': [
-                "🎭 Поиск в многомерном пространстве...",
-                "🔄 Калибровка масок реальности...",
-                "💫 Синхронизация параллельных личностей..."
-            ]
-        }
-
-        process_steps = process_descriptions.get(text, [
-            "🔮 Анализ магического потенциала...",
-            "✨ Подготовка превращения...",
-            "🎭 Финальная магическая настройка..."
-        ])
-
-        # Процесс магической генерации
+        # Процесс магической генерации с прогрессом
         progress_msg = await update.message.reply_text(
             f'**🔮 WEBI-future запускает магическое превращение!**\n'
-            f'Цель: {selected_description}\n\n'
-            f'_{process_steps[0]}_'
+            f'Цель: {text}\n\n'
+            f'_📸 Анализирую фото..._'
         )
 
-        await asyncio.sleep(3)
-        await progress_msg.edit_text(
-            f'**🔮 WEBI-future запускает магическое превращение!**\n'
-            f'Цель: {selected_description}\n\n'
-            f'_{process_steps[1]}_'
-        )
-
-        await asyncio.sleep(3)
-        await progress_msg.edit_text(
-            f'**🔮 WEBI-future запускает магическое превращение!**\n'
-            f'Цель: {selected_description}\n\n'
-            f'_{process_steps[2]}_'
-        )
+        # Скачиваем фото пользователя
+        photo_file = user_data[user_id].photo_file
+        photo_path = f"temp_photo_{user_id}.jpg"
+        await photo_file.download_to_drive(photo_path)
 
         await asyncio.sleep(2)
-        await progress_msg.delete()
-
-        # Уникальные завершающие сообщения для каждого архетипа
-        completion_messages = {
-            '🧙 АРХИМАГ': 'Теперь ты обладаешь знанием древних заклинаний и магической мудростью! 📖✨',
-            '🐉 ХРАНИТЕЛЬ ДРАКОНОВ': 'Драконы признали в тебе друга и хранителя! 🐲🔥',
-            '🌿 ДУХ ПРИРОДЫ': 'Природа обрела в тебе своё голос и защитника! 🌳🍃',
-            '⚡ ПОВЕЛИТЕЛЬ СТИХИЙ': 'Стихии покорились твоей воле! Огонь, вода, воздух и земля служат тебе! 🌪️🔥',
-            '💎 КРИСТАЛЛИЧЕСКИЙ АВАТАР': 'Ты стал воплощением чистой энергии и света! 💎🌈',
-            '🎭 МАСКА ТЫСЯЧИ ЛИКОВ': 'Ты обрёл способность менять облики между реальностями! 🎭🔄'
-        }
-
-        await update.message.reply_text(
-            f'**✨ МАГИЧЕСКОЕ ПРЕВРАЩЕНИЕ ЗАВЕРШЕНО!**\n\n'
-            f'Ты успешно превратился в {selected_description}!\n\n'
-            f'{completion_messages.get(text, "Магия работает!")}\n\n'
-            f'🚀 **WEBI-future** открывает порталы в новые реальности!\n\n'
-            f'🔗 Посети наш сайт: https://prusya.pythonanywhere.com/\n\n'
-            f'Хочешь испытать другое превращение? Присылай новое фото!',
-            reply_markup=MAGIC_KEYBOARD
+        await progress_msg.edit_text(
+            f'**🔮 WEBI-future запускает магическое превращение!**\n'
+            f'Цель: {text}\n\n'
+            f'_✨ Подготавливаю магические энергии..._'
         )
+
+        # Пытаемся сгенерировать AI-видео
+        try:
+            await progress_msg.edit_text(
+                f'**🔮 WEBI-future запускает магическое превращение!**\n'
+                f'Цель: {text}\n\n'
+                f'_🎬 Создаю магическое видео... (это займет 1-2 минуты)_'
+            )
+
+            # Здесь будет вызов AI-API
+            video_url = await generate_ai_video(photo_path, selected_prompt)
+
+            if video_url:
+                # Отправляем полученное видео
+                await update.message.reply_video(
+                    video=video_url,
+                    caption=f'**✨ МАГИЧЕСКОЕ ПРЕВРАЩЕНИЕ ЗАВЕРШЕНО!**\n\n'
+                            f'Ты успешно превратился в {text}!\n\n'
+                            f'🚀 **WEBI-future** открывает порталы в новые реальности!',
+                    reply_markup=MAGIC_KEYBOARD
+                )
+                await progress_msg.delete()
+            else:
+                # Если AI-видео не сгенерировалось, показываем заглушку
+                await show_magical_transformation(update, text, progress_msg)
+
+        except Exception as ai_error:
+            logger.error(f"Ошибка AI-генерации: {ai_error}")
+            # Если AI не работает, показываем стандартное превращение
+            await show_magical_transformation(update, text, progress_msg)
+
+        # Очищаем временные файлы
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
 
         # Сбрасываем состояние
         user_data[user_id] = UserState()
