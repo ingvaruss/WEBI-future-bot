@@ -263,10 +263,23 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Exception while handling an update: {context.error}")
 
 
-def main():
-    print("🔮 Запуск WEBI-future Магической Лаборатории...")
+async def on_startup(app: Application):
+    """Функция, которая выполняется при запуске бота"""
+    print("🔄 WEBI-future Магическая Лаборатория запускается...")
+    print("✅ Бот успешно активирован и готов к работе!")
 
-    # Создаем приложение с обработкой ошибок
+
+async def on_shutdown(app: Application):
+    """Функция, которая выполняется при остановке бота"""
+    print("🔄 WEBI-future Магическая Лаборатория останавливается...")
+    print("👋 До новых встреч в магических реальностях!")
+
+
+def main():
+    """Основная функция запуска бота"""
+    print("🔮 Инициализация WEBI-future Магической Лаборатории...")
+
+    # Создаем приложение
     application = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -281,21 +294,14 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
 
-    print("✅ WEBI-future Магическая Лаборатория активирована!")
+    print("🚀 Запуск бота в режиме polling...")
 
-    # Запускаем бота
+    # Запускаем бота в режиме polling
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
+        drop_pending_updates=True,
+        close_loop=False
     )
-
-
-async def on_startup(app: Application):
-    print("🔄 Бот запускается...")
-
-
-async def on_shutdown(app: Application):
-    print("🔄 Бот останавливается...")
 
 
 if __name__ == '__main__':
