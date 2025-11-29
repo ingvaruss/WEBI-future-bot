@@ -4,6 +4,7 @@ import asyncio
 import threading
 import base64
 import requests
+import time
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -114,6 +115,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_ai_video(photo_path: str, prompt: str) -> str:
     """Генерация AI-видео через Kling AI API"""
+    logger.info("🎯 ФУНКЦИЯ generate_ai_video ВЫЗВАНА")
     try:
         api_key = os.getenv('KLING_AI_API_KEY')
         secret_key = os.getenv('KLING_AI_SECRET_KEY')
@@ -145,7 +147,7 @@ async def generate_ai_video(photo_path: str, prompt: str) -> str:
         }
 
         # Отправляем запрос на генерацию
-        logger.info("Отправляем запрос в Kling AI API...")
+        logger.info("🎯 Отправляем запрос в Kling AI API...")
         response = requests.post(url, json=payload, headers=headers, timeout=60)
 
         if response.status_code == 200:
@@ -185,7 +187,7 @@ async def wait_for_video_generation(task_id: str, headers: dict) -> str:
 
                 if status == "completed":
                     video_url = status_data.get("video_url")
-                    logger.info(f"Видео сгенерировано: {video_url}")
+                    logger.info(f"🎯 Видео сгенерировано: {video_url}")
                     return video_url
                 elif status == "failed":
                     logger.error(f"Генерация видео не удалась: {status_data.get('error')}")
@@ -325,8 +327,14 @@ async def handle_archetype_selection(update: Update, context: ContextTypes.DEFAU
                 f'_🎬 Создаю магическое видео... (это займет 1-2 минуты)_'
             )
 
+            # ОТЛАДКА: Проверяем дошли ли до сюда
+            logger.info("🎯 ДОШЛИ ДО ВЫЗОВА AI-API")
+
             # Здесь будет вызов AI-API
             video_url = await generate_ai_video(photo_path, selected_prompt)
+
+            # ОТЛАДКА: Проверяем что вернула функция
+            logger.info(f"🎯 generate_ai_video вернула: {video_url}")
 
             if video_url:
                 # Отправляем полученное видео
@@ -433,16 +441,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # Проверяем, не запущен ли уже бот
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("🛑 Бот остановлен пользователем")
-    except Exception as e:
-        if "Conflict" in str(e):
-            print("🔁 Обнаружен конфликт. Перезапуск через 10 секунд...")
-            time.sleep(10)
-            main()
-        else:
-            print(f"❌ Критическая ошибка: {e}")
-            raise e
+    main()
